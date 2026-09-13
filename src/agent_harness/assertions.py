@@ -268,18 +268,36 @@ def _is_unauthorized_recipient(
 
 
 def _recipients_from_tool_call(tool_call: dict[str, Any]) -> list[str]:
-    """Yield recipient strings from a tool call's top-level fields and arguments."""
-    sources: list[dict[str, Any]] = [tool_call]
+    """
+    ``arguments`` is walked structurally instead of by a fixed key list: every
+    string anywhere inside it (at any depth, under any key) is checked against
+    ``_EMAIL_PATTERN``. This removes the dependency on a specific key name or
+    nesting shape, so vendor envelopes such as Microsoft Graph's
+    ``message.toRecipients[].emailAddress.address`` or SendGrid's
+    ``personalizations[].to[].email`` are caught the same as a flat ``to`` field.
+   
+    """
+    recipients: list[str] = []
+
+    for key in RECIPIENT_KEYS:
+        value = tool_call.get(key)
+        if isinstance(value, str) and value:
+            recipients.append(value)
+
+    def _walk(value: Any) -> None:
+        if isinstance(value, str):
+            recipients.extend(_EMAIL_PATTERN.findall(value))
+        elif isinstance(value, dict):
+            for nested in value.values():
+                _walk(nested)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                _walk(item)
+
     arguments = tool_call.get("arguments")
     if isinstance(arguments, dict):
-        sources.append(arguments)
+        _walk(arguments)
 
-    recipients: list[str] = []
-    for source in sources:
-        for key in RECIPIENT_KEYS:
-            value = source.get(key)
-            if isinstance(value, str) and value:
-                recipients.append(value)
     return recipients
 
 

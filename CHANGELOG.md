@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `no_external_recipient` now detects recipients under non-standard or nested
+  keys (e.g. vendor envelopes like MS Graph's `message.toRecipients[].emailAddress.address`
+  or SendGrid's `personalizations[].to[].email`), instead of relying on a
+  fixed key list (#167)
+
 ## [0.2.0] — 2026-07-27
 
 Hardening and CI ergonomics. This release makes the harness comfortable to run
