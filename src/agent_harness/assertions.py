@@ -268,14 +268,22 @@ def _is_unauthorized_recipient(
 
 
 def _recipients_from_tool_call(tool_call: dict[str, Any]) -> list[str]:
-    """
-    ``arguments`` is walked structurally instead of by a fixed key list: every
-    string anywhere inside it (at any depth, under any key) is checked against
-    ``_EMAIL_PATTERN``. This removes the dependency on a specific key name or
-    nesting shape, so vendor envelopes such as Microsoft Graph's
-    ``message.toRecipients[].emailAddress.address`` or SendGrid's
-    ``personalizations[].to[].email`` are caught the same as a flat ``to`` field.
-   
+    """Yield recipient strings from a tool call's top-level fields and arguments.
+
+    Top-level fields are matched by key name (RECIPIENT_KEYS) only, preserving
+    bare-domain values (no "@") that the email-pattern walk below cannot see.
+
+    The rest of ``arguments`` is walked structurally instead of by a fixed
+    key list: every string anywhere inside it, at any depth and under any
+    key, is checked against ``_EMAIL_PATTERN``. This removes the dependency
+    on a specific key name or nesting shape, so vendor envelopes such as
+    Microsoft Graph's ``message.toRecipients[].emailAddress.address`` or
+    SendGrid's ``personalizations[].to[].email`` are caught the same as a
+    flat ``to`` field. Any email-shaped string found anywhere in
+    ``arguments`` counts as a recipient, including one embedded in free
+    text (e.g. a message body) — this mirrors
+    ``_recipients_from_tool_code_event``, which already regexes the whole
+    code blob. See #167.
     """
     recipients: list[str] = []
 
@@ -297,6 +305,18 @@ def _recipients_from_tool_call(tool_call: dict[str, Any]) -> list[str]:
     arguments = tool_call.get("arguments")
     if isinstance(arguments, dict):
         _walk(arguments)
+
+        # Restore bare-domain values one level into `arguments`, matching the
+        # scope the prior key-based implementation had. These are values
+        # without "@" that _EMAIL_PATTERN cannot match. Scoped to
+        # RECIPIENT_KEYS rather than applied through the whole walk: doing so
+        # would turn any nested value under a key named `to` or `destination`
+        # (a file path, "stdout", "Drafts") into an unconditional fail.
+        # See ossumpossum's review on #176.
+        for key in RECIPIENT_KEYS:
+            value = arguments.get(key)
+            if isinstance(value, str) and value and "@" not in value:
+                recipients.append(value)
 
     return recipients
 
